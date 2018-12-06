@@ -1,0 +1,8 @@
+[package]
+name = "aoc2018"
+version = "0.1.0"
+authors = ["Xavier Payn <xavier.payn@gmail.com>"]
+
+[dependencies]
+aoc-runner = "0.2.0"
+aoc-runner-derive = "0.2.0"
