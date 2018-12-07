@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use aoc_runner_derive::{aoc, aoc_generator};
 use itertools::Itertools;
+use std::collections::HashMap;
 
 #[aoc_generator(day2)]
 pub fn input_generator(input: &str) -> Vec<String> {
@@ -31,7 +32,7 @@ pub fn solve_part1(input: &[String]) -> u64 {
         counter3 += hit3 as u64;
     });
 
-    counter2*counter3
+    counter2 * counter3
 }
 
 #[aoc(day2, part2)]
@@ -39,20 +40,23 @@ pub fn solve_part2(input: &[String]) -> String {
     let r = input.iter().combinations(2).try_for_each(|v| {
         let (i, j) = (v[0], v[1]);
         let mut diff = false;
-        let r = i.chars().zip(j.chars()).try_fold("".to_owned(), |mut acc, (c_i, c_j)| {
-            if c_i == c_j {
-                acc.push(c_i);
-                Ok(acc)
-            } else if diff {
-                Err(())
-            } else {
-                diff = true;
-                Ok(acc)
-            }
-        });
+        let r = i
+            .chars()
+            .zip(j.chars())
+            .try_fold("".to_owned(), |mut acc, (c_i, c_j)| {
+                if c_i == c_j {
+                    acc.push(c_i);
+                    Ok(acc)
+                } else if diff {
+                    Err(())
+                } else {
+                    diff = true;
+                    Ok(acc)
+                }
+            });
         match r {
             Ok(s) => Err(s),
-            Err(()) => Ok(())
+            Err(()) => Ok(()),
         }
     });
 

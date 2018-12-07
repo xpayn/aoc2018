@@ -1,3 +1,4 @@
+use aoc_runner_derive::{aoc, aoc_generator};
 use std::collections::HashSet;
 
 #[aoc_generator(day1)]
@@ -12,24 +13,24 @@ pub fn solve_part1(input: &[i64]) -> i64 {
 
 #[aoc(day1, part2)]
 pub fn solve_part2(input: &[i64]) -> i64 {
-    let r = input
-        .iter()
-        .cycle()
-        .try_fold((0, HashSet::new()), |mut acc: (i64, HashSet<i64>), x| {
-            acc.1.insert(acc.0);
-            acc.0 += *x;
-            if acc.1.contains(&acc.0) {
-                Err(acc)
-            } else {
-                Ok(acc)
-            }
-        });
+    let r =
+        input
+            .iter()
+            .cycle()
+            .try_fold((0, HashSet::new()), |mut acc: (i64, HashSet<i64>), x| {
+                acc.1.insert(acc.0);
+                acc.0 += *x;
+                if acc.1.contains(&acc.0) {
+                    Err(acc)
+                } else {
+                    Ok(acc)
+                }
+            });
     match r {
         Err(i) => i.0,
         _ => std::i64::MAX,
     }
 }
-
 
 #[cfg(test)]
 mod tests {
