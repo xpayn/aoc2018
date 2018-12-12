@@ -49,6 +49,9 @@ mod tests {
     use super::*;
     #[test]
     fn part1() {
-        assert_eq!(solve_part1("dabAcCaCBAcCcaDA"), "dabCBAcaDA".len());
+        assert_eq!(
+            solve_part1(&input_generator("dabAcCaCBAcCcaDA")),
+            "dabCBAcaDA".len()
+        );
     }
 }
