@@ -5,8 +5,8 @@ authors = ["Xavier Payn <xavier.payn@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-aoc-runner = "0.2.0"
-aoc-runner-derive = "0.2.0"
+aoc-runner = "0.2.x"
+aoc-runner-derive = "0.2.x"
 itertools = "0.7.11"
 bitvec = "0.8.0"
 chrono = "0.4.6"
