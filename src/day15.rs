@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
 
 use aoc_runner_derive::aoc;
 
@@ -6,6 +7,28 @@ use aoc_runner_derive::aoc;
 enum Warrior {
     Elf(i16),
     Goblin(i16),
+}
+
+impl fmt::Display for Warrior {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match *self {
+                Warrior::Elf(_) => 'E',
+                Warrior::Goblin(_) => 'G',
+            }
+        )
+    }
+}
+
+impl fmt::Debug for Warrior {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Warrior::Elf(hp) => write!(f, "E({})", hp),
+            Warrior::Goblin(hp) => write!(f, "G({})", hp),
+        }
+    }
 }
 
 impl Warrior {
@@ -20,10 +43,10 @@ impl Warrior {
         self.get_hit_points() <= 0
     }
 
-    fn take_damage(&mut self) {
+    fn take_damage(&mut self, attack_power: i16) {
         match *self {
-            Warrior::Elf(ref mut p) => *p -= 3,
-            Warrior::Goblin(ref mut p) => *p -= 3,
+            Warrior::Elf(ref mut p) => *p -= attack_power,
+            Warrior::Goblin(ref mut p) => *p -= attack_power,
         }
     }
 }
@@ -35,9 +58,25 @@ enum Tile {
     Occupied(Warrior),
 }
 
+impl fmt::Display for Tile {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Tile::Wall => write!(f, "#"),
+            Tile::Void => write!(f, "."),
+            Tile::Occupied(ref warrior) => warrior.fmt(f),
+        }
+    }
+}
+
 struct Position {
     x: usize,
     y: usize,
+}
+
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({},{})", self.x, self.y)
+    }
 }
 
 impl Position {
@@ -75,9 +114,54 @@ impl Position {
     }
 }
 
+#[derive(Clone)]
 struct Cavern {
     width: usize,
     grid: Vec<Tile>,
+    globlins_attack_power: i16,
+    elves_attack_power: i16,
+}
+
+impl fmt::Display for Cavern {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.grid
+            .chunks(self.width)
+            .map(|arr| {
+                arr.iter()
+                    .map(|e| e.fmt(f))
+                    .collect::<fmt::Result>()
+                    .and(writeln!(f))
+            })
+            .collect()
+    }
+}
+
+impl fmt::Debug for Cavern {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.grid
+            .chunks(self.width)
+            .map(|arr| {
+                let mut acc = vec![];
+                arr.iter()
+                    .map(|e| {
+                        if let Tile::Occupied(warrior) = e {
+                            acc.push(format!("{:?}", warrior))
+                        }
+                        fmt::Display::fmt(e, f)
+                    })
+                    .collect::<fmt::Result>()
+                    .and(writeln!(f, "  {}", acc.join(", ")))
+            })
+            .collect()
+    }
+}
+
+#[derive(PartialEq, Eq)]
+enum FightOutcome {
+    ElvesAllDead,
+    GoblinsAllDead,
+    AnElfDied,
+    Ongoing,
 }
 
 impl Cavern {
@@ -114,16 +198,26 @@ impl Cavern {
             .collect()
     }
 
-    fn advance(&mut self) -> bool {
-        for curr_i in self.get_warriors_indexes() {
+    fn advance(&mut self, stop_if_elf_dies: bool) -> FightOutcome {
+        for mut curr_i in self.get_warriors_indexes() {
             if let Tile::Occupied(ref mut current) = self.grid[curr_i] {
-                let mut hostiles = match *current {
-                    Warrior::Elf(_) => self.get_goblins_indexes(),
-                    Warrior::Goblin(_) => self.get_elves_indexes(),
+                let is_elf = match *current {
+                    Warrior::Elf(_) => true,
+                    _ => false,
+                };
+
+                let (attack_power, mut hostiles) = if is_elf {
+                    (self.elves_attack_power, self.get_goblins_indexes())
+                } else {
+                    (self.globlins_attack_power, self.get_elves_indexes())
                 };
 
                 if hostiles.is_empty() {
-                    return false;
+                    return if is_elf {
+                        FightOutcome::GoblinsAllDead
+                    } else {
+                        FightOutcome::ElvesAllDead
+                    };
                 }
 
                 // sort by distance, then by reading order
@@ -137,18 +231,11 @@ impl Cavern {
                     }
                 });
 
-                if self.naive_distance(curr_i, hostiles[0]) == 1 {
-                    // attack!!!!
-                    if let Tile::Occupied(ref mut target) = self.grid[hostiles[0]] {
-                        target.take_damage();
-                        if target.is_dead() {
-                            self.grid[hostiles[0]] = Tile::Void
-                        }
-                    }
-                } else {
+                if self.naive_distance(curr_i, hostiles[0]) != 1 {
+                    // let's move
                     let in_range = hostiles
-                        .into_iter()
-                        .flat_map(|i| self.get_tiles_in_range_of(i))
+                        .iter()
+                        .flat_map(|&i| self.get_tiles_in_range_of(i))
                         .collect::<HashSet<usize>>();
 
                     if in_range.is_empty() {
@@ -156,8 +243,8 @@ impl Cavern {
                     }
 
                     let mut reachable = in_range
-                        .into_iter()
-                        .filter_map(|tile| self.path(curr_i, tile))
+                        .iter()
+                        .filter_map(|&tile| self.path(curr_i, tile))
                         .collect::<Vec<Vec<usize>>>();
 
                     if reachable.is_empty() {
@@ -171,15 +258,55 @@ impl Cavern {
 
                     self.grid[reachable[0][0]] = self.grid[curr_i].clone();
                     self.grid[curr_i] = Tile::Void;
+                    curr_i = reachable[0][0];
+                }
+
+                let mut adjacents = hostiles
+                    .iter()
+                    .cloned()
+                    .filter(|&i| self.naive_distance(curr_i, i) == 1)
+                    .collect::<Vec<usize>>();
+
+                if !adjacents.is_empty() {
+                    // let's move
+                    // attack!!!!
+                    adjacents.sort_by(|&a, &b| {
+                        if let Tile::Occupied(ref mut hostile_a) = self.grid[a].clone() {
+                            if let Tile::Occupied(ref mut hostile_b) = self.grid[b].clone() {
+                                return match hostile_a
+                                    .get_hit_points()
+                                    .cmp(&hostile_b.get_hit_points())
+                                {
+                                    std::cmp::Ordering::Equal => a.cmp(&b),
+                                    rest => rest,
+                                };
+                            }
+                        }
+                        unreachable!()
+                    });
+
+                    if let Tile::Occupied(ref mut target) = self.grid[adjacents[0]] {
+                        let is_elf = match target {
+                            Warrior::Elf(_) => true,
+                            _ => false,
+                        };
+                        target.take_damage(attack_power);
+                        if target.is_dead() {
+                            self.grid[adjacents[0]] = Tile::Void;
+                            if is_elf && stop_if_elf_dies {
+                                return FightOutcome::AnElfDied;
+                            }
+                        }
+                    }
                 }
             }
         }
-        true
+        FightOutcome::Ongoing
     }
 
     fn get_tiles_in_range_of(&self, index: usize) -> Vec<usize> {
         let p = self.index_to_position(index);
-        vec![p.north(), p.south(), p.east(), p.west()]
+        let mut v = vec![p.north(), p.south(), p.east(), p.west()]
             .iter()
             .filter_map(|p| {
                 let i = self.position_to_index(p);
@@ -188,7 +315,9 @@ impl Cavern {
                     _ => None,
                 }
             })
-            .collect()
+            .collect::<Vec<usize>>();
+        v.sort();
+        v
     }
 
     fn position_to_index(&self, pos: &Position) -> usize {
@@ -221,7 +350,6 @@ impl Cavern {
                     path.push(state);
                     state = *new_state;
                 }
-                path.push(root);
                 path.reverse();
                 return Some(path);
             }
@@ -231,10 +359,10 @@ impl Cavern {
                     continue;
                 }
 
-                if !path_builder.contains_key(&child) {
-                    path_builder.insert(child, subtree_root);
+                path_builder.entry(child).or_insert_with(|| {
                     fifo.push_back(child);
-                }
+                    subtree_root
+                });
             }
 
             visited.insert(subtree_root);
@@ -250,12 +378,33 @@ impl Cavern {
                 Tile::Occupied(ref current) => current.get_hit_points() as usize,
                 _ => unreachable!(),
             })
-            .inspect(|i| println!("aaa {}", i))
             .sum()
+    }
+
+    fn fight_til_the_end(&mut self) -> usize {
+        let mut i = 0;
+        //println!("Initially:\n{:?}", self);
+        while self.advance(false) == FightOutcome::Ongoing {
+            i += 1;
+            //println!("After {} rounds\n{:?}", i, self);
+        }
+        i * self.sum_hit_points()
+    }
+
+    fn fight_til_first_elf_dies(&mut self) -> (FightOutcome, usize) {
+        let mut i = 0;
+        //println!("Initially:\n{:?}", self);
+        let mut outcome = self.advance(true);
+        while outcome == FightOutcome::Ongoing {
+            i += 1;
+            outcome = self.advance(true);
+            //println!("After {} rounds\n{:?}", i, self);
+        }
+        (outcome, i * self.sum_hit_points())
     }
 }
 
-fn parse_input(input: &str) -> Cavern {
+fn parse_input(input: &str, elves_attack_power: i16) -> Cavern {
     Cavern {
         width: input.find('\n').unwrap(),
         grid: input
@@ -273,22 +422,52 @@ fn parse_input(input: &str) -> Cavern {
                 })
             })
             .collect(),
+        globlins_attack_power: 3,
+        elves_attack_power,
     }
 }
 
 #[aoc(day15, part1)]
 pub fn solve_part1(input: &str) -> usize {
-    let mut cavern = parse_input(input);
-    let mut i = 0;
-    while cavern.advance() {
-        i += 1;
-    }
-    i * cavern.sum_hit_points()
+    let mut cavern = parse_input(input, 3);
+    cavern.fight_til_the_end()
+}
+
+fn give_elves_some_steroids(orig: &Cavern, power: i16) -> (FightOutcome, usize) {
+    let mut cavern = orig.clone();
+    cavern.elves_attack_power = power;
+    cavern.fight_til_first_elf_dies()
 }
 
 #[aoc(day15, part2)]
 pub fn solve_part2(input: &str) -> usize {
-    unimplemented!()
+    let (mut min, mut max) = (4, 25);
+    let orig = &parse_input(input, min);
+
+    let (outcome, mut score) = give_elves_some_steroids(orig, min);
+    if outcome == FightOutcome::GoblinsAllDead {
+        return score;
+    }
+
+    let (mut outcome, _) = give_elves_some_steroids(orig, max);
+    while outcome != FightOutcome::GoblinsAllDead {
+        max *= 2;
+        outcome = give_elves_some_steroids(orig, max).0;
+    }
+
+    while max - min > 1 {
+        let mid = (max + min) / 2;
+        let (outcome, score_tmp) = give_elves_some_steroids(orig, mid);
+
+        if outcome == FightOutcome::GoblinsAllDead {
+            max = mid;
+            score = score_tmp;
+        } else {
+            min = mid;
+        }
+    }
+
+    score
 }
 
 #[cfg(test)]
@@ -298,6 +477,24 @@ mod tests {
     #[test]
     fn d15_part1() {
         let tests = vec![
+            (
+                "#######\n#.E..G#\n#.#####\n#G#####\n#######",
+                "#######\n#E..G.#\n#G#####\n#.#####\n#######\n",
+            ),
+            ("####\n#GG#\n#.E#\n####", "####\n#.G#\n#GE#\n####\n"),
+            (
+                "########\n#..E..G#\n#G######\n########",
+                "########\n#GE..G.#\n#.######\n########\n",
+            ),
+        ];
+
+        for t in tests {
+            let mut c = parse_input(t.0, 3);
+            c.advance(false);
+            assert_eq!(format!("{}", c), t.1);
+        }
+
+        let tests_full = vec![
             (
                 "#######\n#.G...#\n#...EG#\n#.#.#G#\n#..G#E#\n#.....#\n#######",
                 27730),
@@ -323,7 +520,7 @@ mod tests {
             ),
         ];
 
-        for t in tests {
+        for t in tests_full {
             assert_eq!(solve_part1(t.0), t.1);
         }
     }
